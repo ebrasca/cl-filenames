@@ -3,6 +3,8 @@
 (defpackage #:cl-filenames
   (:use #:common-lisp)
   (:shadow
+   #:directory
+   #:type
    #:*default-pathname-defaults*
    ;; CL Filenames classes.
    #:pathname
