@@ -9,7 +9,10 @@
 (defgeneric file-stream-pathname (stream))
 
 ;;; host
-;; TODO find-host (setf find-host)
+
+(defgeneric find-host (host))
+
+(defgeneric (setf find-host) (new-value host))
 
 (defgeneric host-name (host))
 
