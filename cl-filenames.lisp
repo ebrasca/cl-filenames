@@ -117,9 +117,8 @@
                         (source from-wildcard to-wildcard)
                         ":WILD-INFERIORS must be the last directory entry... (FIXME)")
                 (nconc (nreverse new-path)
-                       (loop
-                         for component in s-d
-                         collect (case-correct-path-component component (pathname-host source) (pathname-host to-wildcard)))))))
+                       (loop :for component :in s-d
+                             :collect (case-correct-path-component component (pathname-host source) (pathname-host to-wildcard)))))))
       (push (first d) new-path))))
 
 (defun pathname-match-directory (p w)
@@ -227,15 +226,14 @@ NAMESTRING as the second."
       (namestring pathname)))
 
 (defun parse-namestring (thing &optional host (default-pathname *default-pathname-defaults*) &key (start 0) (end nil) junk-allowed)
-  (loop
-    (when (not (typep thing 'synonym-stream))
-      (return))
-    (setf thing (symbol-value (synonym-stream-symbol thing))))
+  (loop :always (typep thing 'synonym-stream)
+        :do (setf thing (symbol-value (synonym-stream-symbol thing))))
   (when (typep thing 'file-stream)
     (setf thing (file-stream-pathname thing)))
   (etypecase thing
     (pathname
-     (unless (or (eql host nil) (eql (pathname-host thing) host))
+     (unless (or (eql host nil)
+                 (eql (pathname-host thing) host))
        (error 'simple-type-error
               :expected-type `(eql ,host)
               :datum (pathname-host thing)
@@ -263,37 +261,37 @@ NAMESTRING as the second."
 ;;; pathname
 
 (defclass pathname ()
-  ((%host :initarg :host :reader pathname-%host)
-   (%device :initarg :device :reader pathname-%device)
-   (%directory :initarg :directory :reader pathname-%directory)
-   (%name :initarg :name :reader pathname-%name)
-   (%type :initarg :type :reader pathname-%type)
-   (%version :initarg :version :reader pathname-%version))
+  ((%host :initarg :host :reader host)
+   (%device :initarg :device :reader device)
+   (%directory :initarg :directory :reader directory)
+   (%name :initarg :name :reader name)
+   (%type :initarg :type :reader type)
+   (%version :initarg :version :reader version))
   (:default-initargs :device nil :directory nil :name nil :type nil :version nil))
 
 (defun pathname-host (pathname &key (case :local))
   (declare (ignore case))
-  (pathname-%host (pathname pathname)))
+  (host (pathname pathname)))
 
 (defun pathname-device (pathname &key (case :local))
   (declare (ignore case))
-  (pathname-%device (pathname pathname)))
+  (device (pathname pathname)))
 
 (defun pathname-directory (pathname &key (case :local))
   (declare (ignore case))
-  (pathname-%directory (pathname pathname)))
+  (directory (pathname pathname)))
 
 (defun pathname-name (pathname &key (case :local))
   (declare (ignore case))
-  (pathname-%name (pathname pathname)))
+  (name (pathname pathname)))
 
 (defun pathname-type (pathname &key (case :local))
   (declare (ignore case))
-  (pathname-%type (pathname pathname)))
+  (type (pathname pathname)))
 
 (defun pathname-version (pathname &key (case :local))
   (declare (ignore case))
-  (pathname-%version (pathname pathname)))
+  (version (pathname pathname)))
 
 (defun pathnamep (object)
   (typep object 'pathname))
@@ -345,7 +343,7 @@ NAMESTRING as the second."
                    :version (if versionp version (pathname-version defaults)))))
 
 ;; (defmethod initialize-instance :after ((instance pathname) &key)
-;;   (assert (pathname-%host instance)))
+;;   (assert (host instance)))
 
 ;;; logical-pathname
 
@@ -363,7 +361,7 @@ NAMESTRING as the second."
 
 (defun (setf logical-pathname-translations) (new-translations host)
   (let ((logical-host (find-host host nil)))
-    (when (not logical-host)
+    (unless logical-host
       (check-type host string)
       (setf logical-host (make-instance 'logical-host :name (string-upcase host))
             (find-host host) logical-host))
@@ -382,12 +380,10 @@ NAMESTRING as the second."
     (flet ((write-word (word)
              (cond ((mixed-case-p word)
                     (write-char #\| namestring)
-                    (loop
-                      for ch across word
-                      do
-                      (when (member ch '(#\\ #\|))
-                        (write-char #\\ namestring))
-                      (write-char ch namestring))
+                    (loop :for ch :across word
+                          :do (when (member ch '(#\\ #\|))
+                                (write-char #\\ namestring))
+                              (write-char ch namestring))
                     (write-char #\| namestring))
                    (t
                     (write-string word namestring)))))
@@ -487,18 +483,17 @@ NAMESTRING as the second."
       (when (consume-char #\;)
         (setf relative :relative))
       ;; {directory directory-marker}* [name]
-      (loop
-        (let ((word (consume-word)))
-          (when (not word)
-            (return))
-          (when (not (consume-char #\;))
-            ;; This is the name portion.
-            (when (eql word :wild-inferiors)
-              (error "Unexpected wild-inferiors in name position."))
-            (setf name word)
-            (return))
-          ;; Directory element.
-          (push word directories)))
+      (loop :for word := (consume-word)
+            :always word
+            :do (cond ((not (consume-char #\;))
+                       ;; This is the name portion.
+                       (when (eql word :wild-inferiors)
+                         (error "Unexpected wild-inferiors in name position."))
+                       (setf name word)
+                       (return))
+                      (t
+                       ;; Directory element.
+                       (push word directories))))
       ;; Possible type & version.
       (when (consume-char #\.)
         (let ((word (or (consume-word)
@@ -518,7 +513,7 @@ NAMESTRING as the second."
                           (string= word "NEWEST"))
                      (setf version :newest))
                     (t (setf version word))))))))
-    (when (not (eql offset (length namestring)))
+    (unless (eql offset (length namestring))
       (error "Unexpected ~C in logical namestring." (char namestring offset)))
     (make-instance 'logical-pathname
                    :host host
@@ -567,20 +562,18 @@ NAMESTRING as the second."
              (equal (pathname-version p) (pathname-version w))))))
 
 (defun translate-logical-pathname (pathname &key)
-  (setf pathname (pathname pathname))
-  (when (not (typep pathname 'logical-pathname))
-    (return-from translate-logical-pathname pathname))
-  (loop
-    with host = (pathname-host pathname)
-    for translation in (logical-pathname-translations host)
-    for from-wildcard = (parse-namestring (first translation) host)
-    for to-wildcard = (pathname (second translation))
-    do
-    (when (pathname-match-p pathname from-wildcard)
-      (return (translate-logical-pathname
-               (translate-pathname pathname from-wildcard to-wildcard))))
-    finally
-    (error "No matching translation for logical pathname ~S." pathname)))
+  (let ((pathname (pathname pathname)))
+    (unless (typep pathname 'logical-pathname)
+      (return-from translate-logical-pathname pathname))
+    (loop :with host := (pathname-host pathname)
+          :for translation :in (logical-pathname-translations host)
+          :for from-wildcard := (parse-namestring (first translation) host)
+          :for to-wildcard := (pathname (second translation))
+          :do (when (pathname-match-p pathname from-wildcard)
+                (return (translate-logical-pathname
+                         (translate-pathname pathname from-wildcard to-wildcard))))
+          :finally
+          (error "No matching translation for logical pathname ~S." pathname))))
 
 (defun translate-pathname (source from-wildcard to-wildcard &key)
   (make-pathname :host (pathname-host to-wildcard)
@@ -601,8 +594,8 @@ NAMESTRING as the second."
 (defun merge-pathnames (pathname &optional
                                    (default-pathname *default-pathname-defaults*)
                                    (default-version :newest))
-  (setf default-pathname (pathname default-pathname))
-  (let* ((pathname (let ((*default-pathname-defaults* default-pathname))
+  (let* ((default-pathname (pathname default-pathname))
+         (pathname (let ((*default-pathname-defaults* default-pathname))
                      (pathname pathname)))
          (host (or (pathname-host pathname) (pathname-host default-pathname)))
          (device (pathname-device pathname))
